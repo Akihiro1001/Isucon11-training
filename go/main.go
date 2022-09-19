@@ -1216,29 +1216,31 @@ func postIsuCondition(c echo.Context) error {
 	// }
 
 	// NOTE:バルクインサートに変更（変更後）
-	ddl := []byte("INSERT INTO `isu_condition` (`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`) VALUES")
+
+	var param []IsuCondition
 
 	for _, cond := range req {
+
 		timestamp := time.Unix(cond.Timestamp, 0)
 
 		if !isValidConditionFormat(cond.Condition) {
 			return c.String(http.StatusBadRequest, "bad request body")
 		}
 
-		ddl = append(ddl, '(')
-		ddl = append(ddl, []byte(jiaIsuUUID)...)
-		ddl = append(ddl, ',')
-		ddl = append(ddl, []byte(timestamp.Format("2000/01/01 00:00:00"))...)
-		ddl = append(ddl, ',')
-		ddl = append(ddl, []byte(strconv.FormatBool(cond.IsSitting))...)
-		ddl = append(ddl, ',')
-		ddl = append(ddl, []byte(cond.Condition)...)
-		ddl = append(ddl, ',')
-		ddl = append(ddl, []byte(cond.Message)...)
-		ddl = append(ddl, ')')
+		param = append(param, IsuCondition{
+			JIAIsuUUID: jiaIsuUUID,
+			Timestamp:  timestamp,
+			IsSitting:  cond.IsSitting,
+			Condition:  cond.Condition,
+			Message:    cond.Message,
+		})
 	}
 
-	_, err = tx.Exec(string(ddl))
+	_, err = tx.Exec(
+		"INSERT INTO `isu_condition`"+
+			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
+			"	VALUES (?, ?, ?, ?, ?)",
+		param)
 
 	if err != nil {
 		c.Logger().Errorf("db error: %v", err)
