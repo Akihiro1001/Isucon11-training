@@ -10,6 +10,11 @@ cd /home/isucon/webapp/nodejs
 npm install
 npm run build
 
+# ハードリンクを貼る
+sudo rm -f /etc/mysql/mariadb.conf.d/50-server.cnf
+cd /etc/mysql/mariadb.conf.d
+sudo ln /home/isucon/webapp/configs/50-server.cnf
+
 # サービス再起動
 sudo systemctl restart nginx
 sudo systemctl restart mysqld
