@@ -1239,7 +1239,7 @@ func postIsuCondition(c echo.Context) error {
 	_, err = tx.Exec(
 		"INSERT INTO `isu_condition`"+
 			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
-			"	VALUES (?, ?, ?, ?, ?)",
+			"	VALUES ?",
 		param)
 
 	if err != nil {
