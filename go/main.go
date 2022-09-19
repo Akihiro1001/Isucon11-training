@@ -209,7 +209,7 @@ func init() {
 func main() {
 	e := echo.New()
 	e.Debug = true
-	e.Logger.SetLevel(log.DEBUG)
+	e.Logger.SetLevel(log.ERROR)
 
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
@@ -1195,6 +1195,29 @@ func postIsuCondition(c echo.Context) error {
 		return c.String(http.StatusNotFound, "not found: isu")
 	}
 
+	// NOTE:バルクインサートに変更（変更前）
+	// for _, cond := range req {
+	// 	timestamp := time.Unix(cond.Timestamp, 0)
+
+	// 	if !isValidConditionFormat(cond.Condition) {
+	// 		return c.String(http.StatusBadRequest, "bad request body")
+	// 	}
+
+	// 	_, err = tx.Exec(
+	// 		"INSERT INTO `isu_condition`"+
+	// 			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
+	// 			"	VALUES (?, ?, ?, ?, ?)",
+	// 		jiaIsuUUID, timestamp, cond.IsSitting, cond.Condition, cond.Message)
+	// 	if err != nil {
+	// 		c.Logger().Errorf("db error: %v", err)
+	// 		return c.NoContent(http.StatusInternalServerError)
+	// 	}
+
+	// }
+
+	// NOTE:バルクインサートに変更（変更後）
+	ddl := []byte("INSERT INTO `isu_condition` (`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`) VALUES")
+
 	for _, cond := range req {
 		timestamp := time.Unix(cond.Timestamp, 0)
 
@@ -1202,16 +1225,24 @@ func postIsuCondition(c echo.Context) error {
 			return c.String(http.StatusBadRequest, "bad request body")
 		}
 
-		_, err = tx.Exec(
-			"INSERT INTO `isu_condition`"+
-				"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
-				"	VALUES (?, ?, ?, ?, ?)",
-			jiaIsuUUID, timestamp, cond.IsSitting, cond.Condition, cond.Message)
-		if err != nil {
-			c.Logger().Errorf("db error: %v", err)
-			return c.NoContent(http.StatusInternalServerError)
-		}
+		ddl = append(ddl, '(')
+		ddl = append(ddl, []byte(jiaIsuUUID)...)
+		ddl = append(ddl, ',')
+		ddl = append(ddl, []byte(timestamp.Format("2000/01/01 00:00:00"))...)
+		ddl = append(ddl, ',')
+		ddl = append(ddl, []byte(strconv.FormatBool(cond.IsSitting))...)
+		ddl = append(ddl, ',')
+		ddl = append(ddl, []byte(cond.Condition)...)
+		ddl = append(ddl, ',')
+		ddl = append(ddl, []byte(cond.Message)...)
+		ddl = append(ddl, ')')
+	}
 
+	_, err = tx.Exec(string(ddl))
+
+	if err != nil {
+		c.Logger().Errorf("db error: %v", err)
+		return c.NoContent(http.StatusInternalServerError)
 	}
 
 	err = tx.Commit()
