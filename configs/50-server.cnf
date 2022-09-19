@@ -10,6 +10,12 @@
 # this is only for the mysqld standalone daemon
 [mysqld]
 
+# for isucon
+slow_query_log         = 1
+# ログ出力先の権限確認
+slow_query_log_file    = /var/log/mysql/mysql-slow.log
+long_query_time        = 0
+
 #
 # * Basic Settings
 #
@@ -131,4 +137,3 @@ collation-server      = utf8mb4_general_ci
 # If you use the same .cnf file for MariaDB of different versions,
 # use this group for options that older servers don't understand
 [mariadb-10.3]
-
