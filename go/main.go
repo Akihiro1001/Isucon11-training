@@ -1217,7 +1217,7 @@ func postIsuCondition(c echo.Context) error {
 
 	// NOTE:バルクインサートに変更（変更後）
 
-	var param []IsuCondition
+	var rows []IsuCondition
 
 	for _, cond := range req {
 
@@ -1227,7 +1227,7 @@ func postIsuCondition(c echo.Context) error {
 			return c.String(http.StatusBadRequest, "bad request body")
 		}
 
-		param = append(param, IsuCondition{
+		rows = append(rows, IsuCondition{
 			JIAIsuUUID: jiaIsuUUID,
 			Timestamp:  timestamp,
 			IsSitting:  cond.IsSitting,
@@ -1239,8 +1239,8 @@ func postIsuCondition(c echo.Context) error {
 	_, err = tx.Exec(
 		"INSERT INTO `isu_condition`"+
 			"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
-			"	VALUES ?",
-		param)
+			"	VALUES (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :message)",
+		rows)
 
 	if err != nil {
 		c.Logger().Errorf("db error: %v", err)
