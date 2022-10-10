@@ -1049,6 +1049,9 @@ func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, c
 		)
 	}
 
+	if err != nil {
+		return nil, fmt.Errorf("db error: %v", err)
+	}
 	err = db.Select(&conditions, db.Rebind(query), params...)
 	if err != nil {
 		return nil, err
@@ -1074,10 +1077,6 @@ func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, c
 	// }
 	////////////////////////////////////////////////////////////////////
 
-	if err != nil {
-		return nil, fmt.Errorf("db error: %v", err)
-	}
-
 	// TAKI: コンディションレベルを検索条件に追加。リミット追加
 	// AFTER ///////////////////////////////////////////////////////
 	conditionsResponse := []*GetIsuConditionResponse{}
@@ -1095,6 +1094,7 @@ func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, c
 		conditionsResponse = append(conditionsResponse, &data)
 
 	}
+
 	// BEFORE ///////////////////////////////////////////////////////
 
 	// for _, c := range conditions {
