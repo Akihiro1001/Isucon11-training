@@ -1021,24 +1021,39 @@ func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, c
 
 	// TAKI: コンディションレベルを検索条件に追加。リミット追加
 	// AFTER ///////////////////////////////////////////////////////
+
+	var query string
+	var params []interface{}
+
+	conditionLevelArr := []string{}
+	for cl := range conditionLevel {
+		conditionLevelArr = append(conditionLevelArr, cl)
+	}
+
 	if startTime.IsZero() {
-		err = db.Select(&conditions,
+		query, params, err = sqlx.In(
 			"SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ?"+
-				"	AND `conditionLevel` = ?"+
+				"	AND `conditionLevel` IN (?)"+
 				"	AND `timestamp` < ?"+
 				"	ORDER BY `timestamp` DESC limit ?",
-			jiaIsuUUID, endTime, conditionLevel, limit,
+			jiaIsuUUID, endTime, conditionLevelArr, limit,
 		)
 	} else {
-		err = db.Select(&conditions,
+		query, params, err = sqlx.In(
 			"SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ?"+
-				"	AND `conditionLevel` = ?"+
+				"	AND `conditionLevel` IN (?)"+
 				"	AND `timestamp` < ?"+
 				"	AND ? <= `timestamp`"+
 				"	ORDER BY `timestamp` DESC limit ?",
-			jiaIsuUUID, endTime, startTime, conditionLevel, limit,
+			jiaIsuUUID, endTime, startTime, conditionLevelArr, limit,
 		)
 	}
+
+	err = db.Select(&conditions, db.Rebind(query), params...)
+	if err != nil {
+		return nil, err
+	}
+
 	// BEFORE //////////////////////////////////////////////////////////
 	// if startTime.IsZero() {
 	// 	err = db.Select(&conditions,
