@@ -83,13 +83,14 @@ type GetIsuListResponse struct {
 }
 
 type IsuCondition struct {
-	ID         int       `db:"id"`
-	JIAIsuUUID string    `db:"jia_isu_uuid"`
-	Timestamp  time.Time `db:"timestamp"`
-	IsSitting  bool      `db:"is_sitting"`
-	Condition  string    `db:"condition"`
-	Message    string    `db:"message"`
-	CreatedAt  time.Time `db:"created_at"`
+	ID             int       `db:"id"`
+	JIAIsuUUID     string    `db:"jia_isu_uuid"`
+	Timestamp      time.Time `db:"timestamp"`
+	IsSitting      bool      `db:"is_sitting"`
+	Condition      string    `db:"condition"`
+	ConditionLevel string    `db:"condition_level"`
+	Message        string    `db:"message"`
+	CreatedAt      time.Time `db:"created_at"`
 }
 
 type MySQLConnectionEnv struct {
@@ -376,7 +377,7 @@ func postAuthentication(c echo.Context) error {
 		return c.String(http.StatusBadRequest, "invalid JWT payload")
 	}
 
-	_, err = db.Exec("INSERT IGNORE INTO user (`jia_user_id`) VALUES (?)", jiaUserID)
+	_, err = db.Exec("INSERT IGNORE INTO user (`jia_user_id`) VALUES (?)", jiaUserID) // TAKI:ログインユーザーをuser tableにinsert
 	if err != nil {
 		c.Logger().Errorf("db error: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
@@ -446,6 +447,7 @@ func getMe(c echo.Context) error {
 
 // GET /api/isu
 // ISUの一覧を取得
+// TAKI:自身の椅子リスト取得 -> 各椅子の最新のコンディション取得 -> コンディション計算
 func getIsuList(c echo.Context) error {
 	jiaUserID, errStatusCode, err := getUserIDFromSession(c)
 	if err != nil {
@@ -528,6 +530,8 @@ func getIsuList(c echo.Context) error {
 
 // POST /api/isu
 // ISUを登録
+// TAKI:imageが指定されていない場合はデフォルトのイメージを保存する
+// TAKI:椅子登録 -> JIAアクティベート -> 椅子の性格を更新（JIAから取得した性格） -> ID検索
 func postIsu(c echo.Context) error {
 	jiaUserID, errStatusCode, err := getUserIDFromSession(c)
 	if err != nil {
@@ -722,6 +726,7 @@ func getIsuIcon(c echo.Context) error {
 
 // GET /api/isu/:jia_isu_uuid/graph
 // ISUのコンディショングラフ描画のための情報を取得
+// TAKI:指定した椅子のカウントを取得 -> 椅子が存在する場合、グラフのデータ点を一日分生成
 func getIsuGraph(c echo.Context) error {
 	jiaUserID, errStatusCode, err := getUserIDFromSession(c)
 	if err != nil {
@@ -884,6 +889,7 @@ func generateIsuGraphResponse(tx *sqlx.Tx, jiaIsuUUID string, graphDate time.Tim
 }
 
 // 複数のISUのコンディションからグラフの一つのデータ点を計算
+// TAKI:スコア=各コンディションのスコア（1,2,3で評価）の平均値を百分率で表現（平均3=100%=最も悪い）
 func calculateGraphDataPoint(isuConditions []IsuCondition) (GraphDataPoint, error) {
 	conditionsCount := map[string]int{"is_broken": 0, "is_dirty": 0, "is_overweight": 0}
 	rawScore := 0
@@ -1006,56 +1012,100 @@ func getIsuConditions(c echo.Context) error {
 }
 
 // ISUのコンディションをDBから取得
+// TAKI: コンディションリスト取得 -> 1件ずつコンディションレベルを計算 -> 指定されたコンディションレベルのディションのみ残す -> 上限件数以上は切り捨ててreturn
 func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, conditionLevel map[string]interface{}, startTime time.Time,
 	limit int, isuName string) ([]*GetIsuConditionResponse, error) {
 
 	conditions := []IsuCondition{}
 	var err error
 
+	// TAKI: コンディションレベルを検索条件に追加。リミット追加
+	// AFTER ///////////////////////////////////////////////////////
 	if startTime.IsZero() {
 		err = db.Select(&conditions,
 			"SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ?"+
+				"	AND `conditionLevel` = ?"+
 				"	AND `timestamp` < ?"+
-				"	ORDER BY `timestamp` DESC",
-			jiaIsuUUID, endTime,
+				"	ORDER BY `timestamp` DESC limit ?",
+			jiaIsuUUID, endTime, conditionLevel, limit,
 		)
 	} else {
 		err = db.Select(&conditions,
 			"SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ?"+
+				"	AND `conditionLevel` = ?"+
 				"	AND `timestamp` < ?"+
 				"	AND ? <= `timestamp`"+
-				"	ORDER BY `timestamp` DESC",
-			jiaIsuUUID, endTime, startTime,
+				"	ORDER BY `timestamp` DESC limit ?",
+			jiaIsuUUID, endTime, startTime, conditionLevel, limit,
 		)
 	}
+	// BEFORE //////////////////////////////////////////////////////////
+	// if startTime.IsZero() {
+	// 	err = db.Select(&conditions,
+	// 		"SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ?"+
+	// 			"	AND `timestamp` < ?"+
+	// 			"	ORDER BY `timestamp` DESC",
+	// 		jiaIsuUUID, endTime,
+	// 	)
+	// } else {
+	// 	err = db.Select(&conditions,
+	// 		"SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ?"+
+
+	// 			"	AND `timestamp` < ?"+
+	// 			"	AND ? <= `timestamp`"+
+	// 			"	ORDER BY `timestamp` DESC",
+	// 		jiaIsuUUID, endTime, startTime,
+	// 	)
+	// }
+	////////////////////////////////////////////////////////////////////
+
 	if err != nil {
 		return nil, fmt.Errorf("db error: %v", err)
 	}
 
+	// TAKI: コンディションレベルを検索条件に追加。リミット追加
+	// AFTER ///////////////////////////////////////////////////////
 	conditionsResponse := []*GetIsuConditionResponse{}
 	for _, c := range conditions {
-		cLevel, err := calculateConditionLevel(c.Condition)
-		if err != nil {
-			continue
-		}
 
-		if _, ok := conditionLevel[cLevel]; ok {
-			data := GetIsuConditionResponse{
-				JIAIsuUUID:     c.JIAIsuUUID,
-				IsuName:        isuName,
-				Timestamp:      c.Timestamp.Unix(),
-				IsSitting:      c.IsSitting,
-				Condition:      c.Condition,
-				ConditionLevel: cLevel,
-				Message:        c.Message,
-			}
-			conditionsResponse = append(conditionsResponse, &data)
+		data := GetIsuConditionResponse{
+			JIAIsuUUID:     c.JIAIsuUUID,
+			IsuName:        isuName,
+			Timestamp:      c.Timestamp.Unix(),
+			IsSitting:      c.IsSitting,
+			Condition:      c.Condition,
+			ConditionLevel: c.ConditionLevel,
+			Message:        c.Message,
 		}
-	}
+		conditionsResponse = append(conditionsResponse, &data)
 
-	if len(conditionsResponse) > limit {
-		conditionsResponse = conditionsResponse[:limit]
 	}
+	// BEFORE ///////////////////////////////////////////////////////
+
+	// for _, c := range conditions {
+	// 	cLevel, err := calculateConditionLevel(c.Condition)
+	// 	if err != nil {
+	// 		continue
+	// 	}
+
+	// 	if _, ok := conditionLevel[cLevel]; ok {
+	// 		data := GetIsuConditionResponse{
+	// 			JIAIsuUUID:     c.JIAIsuUUID,
+	// 			IsuName:        isuName,
+	// 			Timestamp:      c.Timestamp.Unix(),
+	// 			IsSitting:      c.IsSitting,
+	// 			Condition:      c.Condition,
+	// 			ConditionLevel: cLevel,
+	// 			Message:        c.Message,
+	// 		}
+	// 		conditionsResponse = append(conditionsResponse, &data)
+	// 	}
+	// }
+
+	// if len(conditionsResponse) > limit {
+	// 	conditionsResponse = conditionsResponse[:limit]
+	// }
+	/////////////////////////////////////////////////////////////////////////
 
 	return conditionsResponse, nil
 }
@@ -1081,6 +1131,8 @@ func calculateConditionLevel(condition string) (string, error) {
 
 // GET /api/trend
 // ISUの性格毎の最新のコンディション情報
+// TAKI: 性格リスト取得 -> 性格ごとに椅子リストを取得 -> 椅子リストの椅子ごとに最新コンディション取得 -> コンディションレベルに分類し、日時でソート
+// TAKI: 性格ごと、かつコンディションレベルごとで日時でソートされたコンディションを取得
 func getTrend(c echo.Context) error {
 	characterList := []Isu{}
 	err := db.Select(&characterList, "SELECT `character` FROM `isu` GROUP BY `character`")
@@ -1232,13 +1284,30 @@ func postIsuCondition(c echo.Context) error {
 			return c.String(http.StatusBadRequest, "bad request body")
 		}
 
+		// TAKI:コンディションレベルをインサート
+		// BEFORE //////////////////////////////////////////////////
+		cLevel, err := calculateConditionLevel(cond.Condition)
+		if err != nil {
+			continue
+		}
+
 		rows = append(rows, IsuCondition{
-			JIAIsuUUID: jiaIsuUUID,
-			Timestamp:  timestamp,
-			IsSitting:  cond.IsSitting,
-			Condition:  cond.Condition,
-			Message:    cond.Message,
+			JIAIsuUUID:     jiaIsuUUID,
+			Timestamp:      timestamp,
+			IsSitting:      cond.IsSitting,
+			Condition:      cond.Condition,
+			ConditionLevel: cLevel,
+			Message:        cond.Message,
 		})
+		// AFTER //////////////////////////////////////////////////
+		// rows = append(rows, IsuCondition{
+		// 	JIAIsuUUID: jiaIsuUUID,
+		// 	Timestamp:  timestamp,
+		// 	IsSitting:  cond.IsSitting,
+		// 	Condition:  cond.Condition,
+		// 	Message:    cond.Message,
+		// })
+		///////////////////////////////////////////////////////////
 	}
 
 	_, err = tx.NamedExec(
