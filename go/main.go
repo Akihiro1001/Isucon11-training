@@ -1024,8 +1024,8 @@ func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, c
 
 	var query string
 	var params []interface{}
-
 	conditionLevelArr := []string{}
+
 	for cl := range conditionLevel {
 		conditionLevelArr = append(conditionLevelArr, cl)
 	}
@@ -1033,7 +1033,7 @@ func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, c
 	if startTime.IsZero() {
 		query, params, err = sqlx.In(
 			"SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ?"+
-				"	AND `conditionLevel` IN (?)"+
+				"	AND `condition_level` IN (?)"+
 				"	AND `timestamp` < ?"+
 				"	ORDER BY `timestamp` DESC limit ?",
 			jiaIsuUUID, endTime, conditionLevelArr, limit,
@@ -1041,7 +1041,7 @@ func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, c
 	} else {
 		query, params, err = sqlx.In(
 			"SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ?"+
-				"	AND `conditionLevel` IN (?)"+
+				"	AND `condition_level` IN (?)"+
 				"	AND `timestamp` < ?"+
 				"	AND ? <= `timestamp`"+
 				"	ORDER BY `timestamp` DESC limit ?",
@@ -1303,7 +1303,7 @@ func postIsuCondition(c echo.Context) error {
 		// BEFORE //////////////////////////////////////////////////
 		cLevel, err := calculateConditionLevel(cond.Condition)
 		if err != nil {
-			continue
+			return c.String(http.StatusBadRequest, "bad request body")
 		}
 
 		rows = append(rows, IsuCondition{
