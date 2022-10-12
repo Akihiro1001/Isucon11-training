@@ -790,7 +790,7 @@ func generateIsuGraphResponse(tx *sqlx.Tx, jiaIsuUUID string, graphDate time.Tim
 	var startTimeInThisHour time.Time
 	var condition IsuCondition
 
-	rows, err := tx.Queryx("SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ? ORDER BY `timestamp` ASC", jiaIsuUUID)
+	rows, err := tx.Queryx("SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ? AND ? <= `timestamp` AND  `timestamp` <= ? ORDER BY `timestamp` ASC", graphDate, graphDate.Add(time.Hour*24), jiaIsuUUID)
 	if err != nil {
 		return nil, fmt.Errorf("db error: %v", err)
 	}
@@ -801,8 +801,12 @@ func generateIsuGraphResponse(tx *sqlx.Tx, jiaIsuUUID string, graphDate time.Tim
 			return nil, err
 		}
 
+		// TAKI:分秒を切り捨て
 		truncatedConditionTime := condition.Timestamp.Truncate(time.Hour)
+		// TAKI:ある1時間単位から次の1時間単位のレコードに変化したら
 		if truncatedConditionTime != startTimeInThisHour {
+
+			// TAKI:1時間分蓄積したコンディションからデータ点を作成
 			if len(conditionsInThisHour) > 0 {
 				data, err := calculateGraphDataPoint(conditionsInThisHour)
 				if err != nil {
@@ -817,6 +821,7 @@ func generateIsuGraphResponse(tx *sqlx.Tx, jiaIsuUUID string, graphDate time.Tim
 						ConditionTimestamps: timestampsInThisHour})
 			}
 
+			// TAKI:リセットして、次の1時間の集計に進む
 			startTimeInThisHour = truncatedConditionTime
 			conditionsInThisHour = []IsuCondition{}
 			timestampsInThisHour = []int64{}
@@ -825,6 +830,7 @@ func generateIsuGraphResponse(tx *sqlx.Tx, jiaIsuUUID string, graphDate time.Tim
 		timestampsInThisHour = append(timestampsInThisHour, condition.Timestamp.Unix())
 	}
 
+	// TAKI:最後の1時間のデータポイント作成
 	if len(conditionsInThisHour) > 0 {
 		data, err := calculateGraphDataPoint(conditionsInThisHour)
 		if err != nil {
@@ -839,6 +845,7 @@ func generateIsuGraphResponse(tx *sqlx.Tx, jiaIsuUUID string, graphDate time.Tim
 				ConditionTimestamps: timestampsInThisHour})
 	}
 
+	// TAKI:指定の1時間に収まるスタートのデータ点とエンド+1のデータ点のインデックスを求める
 	endTime := graphDate.Add(time.Hour * 24)
 	startIndex := len(dataPoints)
 	endNextIndex := len(dataPoints)
@@ -851,6 +858,7 @@ func generateIsuGraphResponse(tx *sqlx.Tx, jiaIsuUUID string, graphDate time.Tim
 		}
 	}
 
+	// TAKI:指定の1時間のデータ点にのみ抽出
 	filteredDataPoints := []GraphDataPointWithInfo{}
 	if startIndex < endNextIndex {
 		filteredDataPoints = dataPoints[startIndex:endNextIndex]
@@ -860,6 +868,7 @@ func generateIsuGraphResponse(tx *sqlx.Tx, jiaIsuUUID string, graphDate time.Tim
 	index := 0
 	thisTime := graphDate
 
+	// TAKI:データ点をループしてレスポンスのリストに詰める（指定範囲時間をオーバーしたら抜ける）
 	for thisTime.Before(graphDate.Add(time.Hour * 24)) {
 		var data *GraphDataPoint
 		timestamps := []int64{}
